@@ -1,0 +1,47 @@
+name: test
+
+on: [push,pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v3
+    - name: install dep
+      run: sudo apt-install qemu expect python3 python-paramiko -y
+    - name: cache qemu
+      id: cache-qemu
+      uses: actions/cache@v3
+      env:
+        cache-name: cache-qemu
+      with:
+        path: |
+          /tmp/qemu/qemu-test-image.qcow2
+          /tmp/qemu/fw_payload_oe_uboot_2304.bin
+          /tmp/qemu/start_vm.sh
+        key: qemu-cache-${{ github.sha }}
+        restore-keys: qemu-cache-
+    - name: setenv
+      run: export LANG=C.UTF-8 TERM=dumb VERBOSE=true
+    - if: ${{ steps.cache-qemu.outputs.cache-hit != 'true' }}
+      name: Download
+      run: |
+         mkdir /tmp/qemu
+         cd /tmp/qemu
+         wget https://mirror.iscas.ac.cn/openeuler-sig-riscv/openEuler-RISC-V/testing/20230322/v0.1/QEMU/fw_payload_oe_uboot_2304.bin -o fw_payload_oe_uboot_2304.bin
+         wget https://mirror.iscas.ac.cn/openeuler-sig-riscv/openEuler-RISC-V/testing/20230322/v0.1/QEMU/openEuler-23.02-V1-base-qemu-testing.qcow2.zst -o /tmp/qemu/qemu-test-image.qcow2.zst
+         wget https://mirror.iscas.ac.cn/openeuler-sig-riscv/openEuler-RISC-V/testing/20230322/v0.1/QEMU/start_vm.sh -o /tmp/qemu/start_vm.sh
+         zstdcat /tmp/qemu/qemu-test-image.qcow2.zst > /tmp/qemu/qemu-test-image.qcow2
+         cd -
+    - name: start
+      run: |
+        bash /tmp/qemu/start_vm.sh&
+    - name: init_mugen
+      run: |
+        expect -c "spawn scp -P 12055 -r . openeuler@localhost:/tmp/mugen-riscv; expect {  \"*assword\" {set timeout 30; send \"openEuler12#$\r\";}; \"yes/no\" {send \"yes\r\"; exp_continue;};}; expect eof"
+    - name: pkill-qemu
+      run: |
+        expect -c "spawn ssh -p 12055 openeuler@localhost; expect { \"login:\"{set timeout 30; send \"root\r\";send \"openEuler12#$\r\"; send \"shutdown now\r\"}} "
+    - name: run_test
+      run: |
+        python ./qemu_test.py --password "openEuler12#$" -d /tmp/mugen-riscv -w /tmp/qemu -K /tmp/qemu/fw_payload_oe_uboot_2304.bin -c 16 -M 32
