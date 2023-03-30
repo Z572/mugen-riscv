@@ -1,0 +1,8 @@
+{
+    "path": "$OET_PATH/testcases/cli-test/openresty",
+    "cases":[
+        {
+            "name": "oe_test_openresty"
+        }
+    ]
+}
